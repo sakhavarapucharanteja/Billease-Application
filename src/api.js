@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = "https://billease-api-charan.onrender.com/api";
 const AUTH_TOKEN_KEY = "billease_auth_token";
 
 export function getAuthToken() {
@@ -44,7 +44,7 @@ export async function apiFetch(path, options = {}) {
     });
   } catch {
     throw new Error(
-      "Cannot connect to BillEase. Check that the backend is running on port 5000."
+      "Cannot connect to BillEase. Please check your internet connection and try again."
     );
   }
 
