@@ -176,68 +176,78 @@ export default function AdminDashboard({ admin, onLogout }) {
     }
   }
 
-  function confirmBusinessAction(business, action) {
-    const approving = action === "approve";
 
-    toast.dismiss();
+function confirmBusinessAction(business, action) {
+  const approving = action === "approve";
 
-    toast(
-      ({ closeToast }) => (
-        <div className="billease-toast-confirm">
-          <div className="billease-toast-heading">
-            {approving ? (
-              <CheckCircle2 size={21} color="#15803d" />
-            ) : (
-              <XCircle size={21} color="#dc2626" />
-            )}
-            <strong>
-              {approving ? "Approve business?" : "Reject registration?"}
-            </strong>
-          </div>
+  toast.dismiss();
 
-          <p className="billease-toast-business">{business.name}</p>
-
-          <p className="billease-toast-description">
-            {approving
-              ? "This business will be granted access to BillEase."
-              : "This business registration will be rejected."}
-          </p>
-
-          <div className="billease-toast-actions">
-            <button
-              type="button"
-              className="billease-toast-cancel"
-              onClick={closeToast}
-            >
-              Cancel
-            </button>
-
-            <button
-              type="button"
-              className={
-                approving
-                  ? "billease-toast-approve"
-                  : "billease-toast-reject"
-              }
-              onClick={() => {
-                closeToast();
-                updateBusiness(business, action);
-              }}
-            >
-              {approving ? "Yes, approve" : "Yes, reject"}
-            </button>
-          </div>
+  toast(
+    ({ closeToast }) => (
+      <div className="billease-confirm-content">
+        <div
+          className={`billease-confirm-icon ${
+            approving ? "approve" : "reject"
+          }`}
+        >
+          {approving ? (
+            <CheckCircle2 size={30} />
+          ) : (
+            <XCircle size={30} />
+          )}
         </div>
-      ),
-      {
-        autoClose: false,
-        closeOnClick: false,
-        draggable: false,
-        closeButton: true,
-        className: "billease-confirm-toast",
-      }
-    );
-  }
+
+        <h3>
+          {approving ? "Approve this business?" : "Reject registration?"}
+        </h3>
+
+        <p className="billease-confirm-business">
+          {business.name}
+        </p>
+
+        <p className="billease-confirm-description">
+          {approving
+            ? "Approving this business will allow its owner to sign in and access the BillEase workspace."
+            : "Rejecting this registration will prevent the business owner from accessing the workspace."}
+        </p>
+
+        <div className="billease-confirm-buttons">
+          <button
+            type="button"
+            className="billease-confirm-cancel"
+            onClick={closeToast}
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            className={
+              approving
+                ? "billease-confirm-approve"
+                : "billease-confirm-reject"
+            }
+            onClick={() => {
+              closeToast();
+              updateBusiness(business, action);
+            }}
+          >
+            {approving ? "Confirm approval" : "Confirm rejection"}
+          </button>
+        </div>
+      </div>
+    ),
+    {
+      position: "top-center",
+      autoClose: false,
+      closeOnClick: false,
+      draggable: false,
+      closeButton: false,
+      className: "billease-confirm-toast",
+    }
+  );
+}
+
 
   function handleLogout() {
     clearAdminAuthToken();

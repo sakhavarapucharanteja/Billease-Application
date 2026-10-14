@@ -846,106 +846,159 @@
 
 
 
-/* BillEase React Toastify confirmation */
+/* Centered BillEase confirmation using React Toastify */
 
-.billease-confirm-toast {
-  width: 360px;
-  max-width: calc(100vw - 40px);
-  padding: 0 !important;
+.Toastify__toast-container--top-center {
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  max-width: 460px;
+  padding: 20px;
+  transform: translate(-50%, -50%);
+}
+
+.billease-confirm-toast.Toastify__toast {
+  width: 100%;
+  min-height: auto;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
   border: 1px solid #e8eaf2;
-  border-radius: 14px !important;
-  background: #ffffff !important;
-  color: #20243a !important;
-  box-shadow: 0 15px 45px rgba(25, 30, 55, 0.15);
+  border-radius: 20px;
+  background: #ffffff;
+  color: #20243a;
+  box-shadow: 0 25px 80px rgba(20, 25, 50, 0.22);
 }
 
 .billease-confirm-toast .Toastify__toast-body {
   display: block;
-  padding: 16px;
+  width: 100%;
+  padding: 30px;
   margin: 0;
 }
 
-.billease-toast-confirm {
-  width: 100%;
+.billease-confirm-toast .Toastify__progress-bar {
+  display: none;
 }
 
-.billease-toast-heading {
+.billease-confirm-content {
+  text-align: center;
+}
+
+.billease-confirm-icon {
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 15px;
+  justify-content: center;
+  width: 70px;
+  height: 70px;
+  margin: 0 auto 20px;
+  border-radius: 22px;
 }
 
-.billease-toast-business {
-  margin: 12px 0 6px;
+.billease-confirm-icon.approve {
+  color: #15803d;
+  background: #ecfdf3;
+}
+
+.billease-confirm-icon.reject {
+  color: #dc2626;
+  background: #fff1f2;
+}
+
+.billease-confirm-content h3 {
+  margin: 0 0 14px;
+  color: #20243a;
+  font-size: 23px;
+  font-weight: 750;
+  letter-spacing: -0.5px;
+}
+
+.billease-confirm-business {
+  display: inline-block;
+  margin: 0 0 15px;
+  padding: 8px 14px;
+  border: 1px solid #e4e0ff;
+  border-radius: 9px;
+  background: #f5f3ff;
   color: #5546ed;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
-  overflow-wrap: anywhere;
 }
 
-.billease-toast-description {
+.billease-confirm-description {
   margin: 0;
-  color: #737b91;
-  font-size: 12px;
-  line-height: 1.6;
+  color: #747b90;
+  font-size: 13px;
+  line-height: 1.8;
 }
 
-.billease-toast-actions {
+.billease-confirm-buttons {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 17px;
+  gap: 12px;
+  margin-top: 28px;
 }
 
-.billease-toast-actions button {
-  padding: 8px 11px;
-  border-radius: 8px;
+.billease-confirm-buttons button {
+  flex: 1;
+  min-height: 46px;
+  padding: 11px 13px;
+  border-radius: 10px;
   font-family: inherit;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: all 0.2s ease;
 }
 
-.billease-toast-cancel {
-  border: 1px solid #e1e5ee;
+.billease-confirm-cancel {
+  border: 1px solid #e0e4ed;
   background: #ffffff;
-  color: #596174;
+  color: #555d72;
 }
 
-.billease-toast-cancel:hover {
+.billease-confirm-cancel:hover {
   background: #f5f6fb;
 }
 
-.billease-toast-approve {
+.billease-confirm-approve {
   border: 1px solid #15803d;
   background: #15803d;
   color: #ffffff;
 }
 
-.billease-toast-approve:hover {
+.billease-confirm-approve:hover {
   background: #166534;
 }
 
-.billease-toast-reject {
+.billease-confirm-reject {
   border: 1px solid #dc2626;
   background: #dc2626;
   color: #ffffff;
 }
 
-.billease-toast-reject:hover {
+.billease-confirm-reject:hover {
   background: #b91c1c;
 }
 
-.Toastify__toast {
-  font-family: inherit;
-  border-radius: 12px;
-}
-
 @media (max-width: 480px) {
-  .billease-confirm-toast {
-    width: calc(100vw - 32px);
-    max-width: none;
+  .Toastify__toast-container--top-center {
+    padding: 12px;
+  }
+
+  .billease-confirm-toast .Toastify__toast-body {
+    padding: 24px 19px;
+  }
+
+  .billease-confirm-content h3 {
+    font-size: 20px;
+  }
+
+  .billease-confirm-buttons {
+    flex-direction: column-reverse;
+  }
+
+  .billease-confirm-buttons button {
+    width: 100%;
+    flex: auto;
   }
 }
