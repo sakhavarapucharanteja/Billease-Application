@@ -12,6 +12,9 @@ import {
   RefreshCw,
   LogOut,
   ShieldCheck,
+  Pencil,
+  X,
+  Save,
 } from "lucide-react";
 import "./AdminDashboard.css";
 
@@ -22,6 +25,13 @@ const FILTERS = [
   { value: "suspended", label: "Suspended", icon: ShieldCheck },
 ];
 
+const EMPTY_FORM = {
+  name: "",
+  ownerName: "",
+  email: "",
+  phone: "",
+};
+
 export default function AdminDashboard({ admin, onLogout }) {
   const [status, setStatus] = useState("pending");
   const [businesses, setBusinesses] = useState([]);
@@ -29,6 +39,9 @@ export default function AdminDashboard({ admin, onLogout }) {
   const [workingId, setWorkingId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [editingBusiness, setEditingBusiness] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
 
   const loadBusinesses = useCallback(async () => {
     setLoading(true);
@@ -44,7 +57,9 @@ export default function AdminDashboard({ admin, onLogout }) {
         throw new Error(data.message || "Could not load businesses.");
       }
 
-      setBusinesses(Array.isArray(data.businesses) ? data.businesses : []);
+      setBusinesses(
+        Array.isArray(data.businesses) ? data.businesses : []
+      );
     } catch (err) {
       setError(err.message || "Could not load business registrations.");
     } finally {
@@ -55,6 +70,74 @@ export default function AdminDashboard({ admin, onLogout }) {
   useEffect(() => {
     loadBusinesses();
   }, [loadBusinesses]);
+
+  function startEditing(business) {
+    const owner =
+      (business.owners || []).find((item) => item.role === "owner") ||
+      (business.owners || [])[0] ||
+      {};
+
+    setEditingBusiness(business);
+    setForm({
+      name: business.name || "",
+      ownerName: owner.name || "",
+      email: owner.email || "",
+      phone: business.phone || "",
+    });
+    setError("");
+    setNotice("");
+  }
+
+  function closeEditor() {
+    if (saving) return;
+    setEditingBusiness(null);
+    setForm(EMPTY_FORM);
+  }
+
+  function updateForm(event) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  async function saveBusiness(event) {
+    event.preventDefault();
+
+    if (!editingBusiness) return;
+
+    setSaving(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await adminApiFetch(
+        `/admin/businesses/${editingBusiness._id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: form.name.trim(),
+            ownerName: form.ownerName.trim(),
+            email: form.email.trim(),
+            phone: form.phone.trim(),
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Could not update business details.");
+      }
+
+      setNotice("Business details updated successfully.");
+      setEditingBusiness(null);
+      setForm(EMPTY_FORM);
+      await loadBusinesses();
+    } catch (err) {
+      setError(err.message || "Could not save business details.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function updateBusiness(business, action) {
     const actionLabel = action === "approve" ? "approve" : "reject";
@@ -217,15 +300,17 @@ export default function AdminDashboard({ admin, onLogout }) {
                     <th>Business</th>
                     <th>Owner</th>
                     <th>Email</th>
+                    <th>Phone</th>
                     <th>Registered</th>
-                    {status === "pending" && <th>Actions</th>}
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {businesses.map((business) => {
-                    const owner = (business.owners || []).find(
-                      (item) => item.role === "owner"
-                    ) || (business.owners || [])[0];
+                    const owner =
+                      (business.owners || []).find(
+                        (item) => item.role === "owner"
+                      ) || (business.owners || [])[0] || {};
 
                     return (
                       <tr key={business._id}>
@@ -245,8 +330,9 @@ export default function AdminDashboard({ admin, onLogout }) {
                             </div>
                           </div>
                         </td>
-                        <td>{owner?.name || "—"}</td>
-                        <td>{owner?.email || "—"}</td>
+                        <td>{owner.name || "—"}</td>
+                        <td>{owner.email || "—"}</td>
+                        <td>{business.phone || "—"}</td>
                         <td>
                           {business.approvalRequestedAt || business.createdAt
                             ? new Date(
@@ -259,36 +345,48 @@ export default function AdminDashboard({ admin, onLogout }) {
                               })
                             : "—"}
                         </td>
-                        {status === "pending" && (
-                          <td>
-                            <div className="admin-row-actions">
-                              <button
-                                type="button"
-                                className="admin-approve"
-                                onClick={() =>
-                                  updateBusiness(business, "approve")
-                                }
-                                disabled={Boolean(workingId)}
-                              >
-                                <CheckCircle2 size={15} />
-                                {workingId === String(business._id)
-                                  ? "Working..."
-                                  : "Approve"}
-                              </button>
-                              <button
-                                type="button"
-                                className="admin-reject"
-                                onClick={() =>
-                                  updateBusiness(business, "reject")
-                                }
-                                disabled={Boolean(workingId)}
-                              >
-                                <XCircle size={15} />
-                                Reject
-                              </button>
-                            </div>
-                          </td>
-                        )}
+                        <td>
+                          <div className="admin-row-actions">
+                            <button
+                              type="button"
+                              className="admin-edit"
+                              onClick={() => startEditing(business)}
+                              disabled={Boolean(workingId) || saving}
+                            >
+                              <Pencil size={15} />
+                              Edit
+                            </button>
+
+                            {status === "pending" && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="admin-approve"
+                                  onClick={() =>
+                                    updateBusiness(business, "approve")
+                                  }
+                                  disabled={Boolean(workingId) || saving}
+                                >
+                                  <CheckCircle2 size={15} />
+                                  {workingId === String(business._id)
+                                    ? "Working..."
+                                    : "Approve"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="admin-reject"
+                                  onClick={() =>
+                                    updateBusiness(business, "reject")
+                                  }
+                                  disabled={Boolean(workingId) || saving}
+                                >
+                                  <XCircle size={15} />
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
@@ -303,6 +401,106 @@ export default function AdminDashboard({ admin, onLogout }) {
           Only authorized platform administrators can manage business approvals.
         </p>
       </section>
+
+      {editingBusiness && (
+        <div
+          className="admin-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeEditor();
+          }}
+        >
+          <section
+            className="admin-edit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-edit-title"
+          >
+            <div className="admin-modal-heading">
+              <div>
+                <span className="admin-eyebrow">BUSINESS MANAGEMENT</span>
+                <h2 id="admin-edit-title">Edit business details</h2>
+                <p>Update the business and owner information.</p>
+              </div>
+              <button
+                type="button"
+                className="admin-modal-close"
+                onClick={closeEditor}
+                disabled={saving}
+                aria-label="Close edit form"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form className="admin-edit-form" onSubmit={saveBusiness}>
+              <label>
+                Business name
+                <input
+                  name="name"
+                  value={form.name}
+                  onChange={updateForm}
+                  maxLength={150}
+                  required
+                />
+              </label>
+
+              <label>
+                Owner name
+                <input
+                  name="ownerName"
+                  value={form.ownerName}
+                  onChange={updateForm}
+                  maxLength={100}
+                  required
+                />
+              </label>
+
+              <label>
+                Owner email
+                <input
+                  name="email"
+                  type="email"
+                  value={form.email}
+                  onChange={updateForm}
+                  maxLength={150}
+                  required
+                />
+              </label>
+
+              <label>
+                Phone number
+                <input
+                  name="phone"
+                  type="tel"
+                  value={form.phone}
+                  onChange={updateForm}
+                  maxLength={20}
+                  placeholder="Enter business phone number"
+                />
+              </label>
+
+              <div className="admin-modal-actions">
+                <button
+                  type="button"
+                  className="admin-cancel"
+                  onClick={closeEditor}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-save"
+                  disabled={saving}
+                >
+                  <Save size={16} />
+                  {saving ? "Saving..." : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

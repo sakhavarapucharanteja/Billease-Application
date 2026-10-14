@@ -190,6 +190,156 @@ function registerAdminRoutes(app, db) {
     }
   );
 
+
+  // Edit business details. Only platform admins can use this route.
+  app.patch(
+    "/api/admin/businesses/:id",
+    requirePlatformAdmin,
+    async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid business ID.",
+          });
+        }
+
+        const businessId = new ObjectId(id);
+        const body = req.body || {};
+
+        const name =
+          typeof body.name === "string" ? body.name.trim() : "";
+
+        const ownerName =
+          typeof body.ownerName === "string"
+            ? body.ownerName.trim()
+            : "";
+
+        const email =
+          typeof body.email === "string"
+            ? body.email.trim().toLowerCase()
+            : "";
+
+        const phone =
+          typeof body.phone === "string" ? body.phone.trim() : "";
+
+        if (!name || name.length > 150) {
+          return res.status(400).json({
+            success: false,
+            message: "Business name is required and must be under 150 characters.",
+          });
+        }
+
+        if (!ownerName || ownerName.length > 100) {
+          return res.status(400).json({
+            success: false,
+            message: "Owner name is required and must be under 100 characters.",
+          });
+        }
+
+        if (
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+          email.length > 150
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Enter a valid owner email address.",
+          });
+        }
+
+        if (phone.length > 20 || (phone && !/^[+\d()\s-]{7,20}$/.test(phone))) {
+          return res.status(400).json({
+            success: false,
+            message: "Enter a valid phone number.",
+          });
+        }
+
+        const business = await businesses.findOne({
+          _id: businessId,
+        });
+
+        if (!business) {
+          return res.status(404).json({
+            success: false,
+            message: "Business not found.",
+          });
+        }
+
+        // Find the business owner without modifying platform admins.
+        const owner = await users.findOne({
+          businessId,
+          role: "owner",
+        });
+
+        if (!owner) {
+          return res.status(404).json({
+            success: false,
+            message: "Business owner account not found.",
+          });
+        }
+
+        // Do not allow the email to be used by another account.
+        const duplicateEmail = await users.findOne({
+          email,
+          _id: { $ne: owner._id },
+        });
+
+        if (duplicateEmail) {
+          return res.status(409).json({
+            success: false,
+            message: "This email address is already used by another account.",
+          });
+        }
+
+        const now = new Date();
+
+        await businesses.updateOne(
+          { _id: businessId },
+          {
+            $set: {
+              name,
+              phone,
+              updatedAt: now,
+            },
+          }
+        );
+
+        await users.updateOne(
+          { _id: owner._id },
+          {
+            $set: {
+              name: ownerName,
+              email,
+              updatedAt: now,
+            },
+          }
+        );
+
+        return res.json({
+          success: true,
+          message: "Business details updated successfully.",
+        });
+      } catch (error) {
+        if (error.code === 11000) {
+          return res.status(409).json({
+            success: false,
+            message: "This email address is already used by another account.",
+          });
+        }
+
+        console.error("Edit business error:", error.message);
+
+        return res.status(500).json({
+          success: false,
+          message: "Could not update business details.",
+        });
+      }
+    }
+  );
+
+
   // Approve a pending business.
   app.patch(
     "/api/admin/businesses/:id/approve",
