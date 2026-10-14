@@ -1,15 +1,10 @@
 require("dotenv").config();
 const express = require("express");
-const crypto = require("crypto");
 const cors = require("cors");
 const { MongoClient, ObjectId } = require("mongodb");
 const { registerAuthRoutes } = require("./auth-routes.cjs");
 const { authenticateToken } = require("./auth.cjs");
-const {
-  SUBSCRIPTION_PLANS,
-  getTrialEndDate,
-  getPublicSubscriptionPlans,
-} = require("./subscription-config.cjs");
+const { registerAdminRoutes } = require("./admin-routes.cjs");
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 const MONGO_URI =
@@ -53,6 +48,78 @@ function getBusinessId(req, res) {
   }
   return new ObjectId(value);
 }
+
+
+
+async function requireApprovedBusiness(req, res, next) {
+  authenticateToken(req, res, async () => {
+    try {
+      if (!req.auth?.businessId || !ObjectId.isValid(req.auth.businessId)) {
+        return res.status(401).json({
+          success: false,
+          code: "INVALID_SESSION",
+          message: "Your session is invalid. Please log in again.",
+        });
+      }
+
+      const business = await db.collection("businesses").findOne({
+        _id: new ObjectId(req.auth.businessId),
+      });
+
+      if (!business) {
+        return res.status(403).json({
+          success: false,
+          code: "BUSINESS_NOT_FOUND",
+          message: "Your business account could not be found.",
+        });
+      }
+
+      if (business.status !== "active") {
+        const isPending = business.status === "pending";
+
+        return res.status(403).json({
+          success: false,
+          code: isPending ? "BUSINESS_PENDING" : "BUSINESS_INACTIVE",
+          status: business.status,
+          message: isPending
+            ? "Your company registration is awaiting admin approval."
+            : "Your company does not currently have access. Contact BillEase support.",
+        });
+      }
+
+      if (!ObjectId.isValid(req.auth.userId)) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid user session.",
+        });
+      }
+
+      const user = await db.collection("users").findOne({
+        _id: new ObjectId(req.auth.userId),
+        businessId: business._id,
+      });
+
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: "User account not found.",
+        });
+      }
+
+      req.business = business;
+      req.user = user;
+      return next();
+    } catch (error) {
+      console.error("Business approval check failed:", error.message);
+
+      return res.status(500).json({
+        success: false,
+        message: "Could not verify your business approval. Please try again.",
+      });
+    }
+  });
+}
+
 // =====================================================
 // PUBLIC ROUTES
 // =====================================================
@@ -71,325 +138,6 @@ app.get("/api/health", (req, res) => {
 });
 
 // =====================================================
-// SUBSCRIPTION API
-// =====================================================
-function getEffectiveSubscription(business) {
-  const subscription = business?.subscription || {};
-  const now = new Date();
-  const trialEndAt = subscription.trialEndAt ? new Date(subscription.trialEndAt) : null;
-  const periodEndAt = subscription.currentPeriodEndAt
-    ? new Date(subscription.currentPeriodEndAt)
-    : null;
-
-  if (subscription.plan === "trial") {
-    const trialIsValid = trialEndAt && !Number.isNaN(trialEndAt.getTime()) && trialEndAt > now;
-    return {
-      plan: "trial",
-      status: trialIsValid ? "trial" : "expired",
-      accessAllowed: Boolean(trialIsValid),
-      trialStartAt: subscription.trialStartAt || null,
-      trialEndAt: subscription.trialEndAt || null,
-      currentPeriodStartAt: subscription.currentPeriodStartAt || subscription.trialStartAt || null,
-      currentPeriodEndAt: subscription.currentPeriodEndAt || subscription.trialEndAt || null,
-      billingCycle: null,
-      daysRemaining: trialIsValid
-        ? Math.max(0, Math.ceil((trialEndAt.getTime() - now.getTime()) / 86400000))
-        : 0,
-    };
-  }
-
-  const plan = SUBSCRIPTION_PLANS[subscription.plan];
-  const periodIsValid = Boolean(
-    plan &&
-    subscription.status === "active" &&
-    periodEndAt &&
-    !Number.isNaN(periodEndAt.getTime()) &&
-    periodEndAt > now
-  );
-
-  return {
-    plan: plan ? subscription.plan : (subscription.plan || "none"),
-    status: periodIsValid ? "active" : (subscription.status === "cancelled" ? "cancelled" : "expired"),
-    accessAllowed: periodIsValid,
-    trialStartAt: subscription.trialStartAt || null,
-    trialEndAt: subscription.trialEndAt || null,
-    currentPeriodStartAt: subscription.currentPeriodStartAt || null,
-    currentPeriodEndAt: subscription.currentPeriodEndAt || null,
-    billingCycle: subscription.billingCycle || null,
-    daysRemaining: periodIsValid
-      ? Math.max(0, Math.ceil((periodEndAt.getTime() - now.getTime()) / 86400000))
-      : 0,
-  };
-}
-
-async function requireActiveSubscription(req, res, next) {
-  try {
-    const businessId = getBusinessId(req, res);
-    if (!businessId) return;
-
-    const business = await db.collection("businesses").findOne({
-      _id: businessId,
-      status: "active",
-    });
-    if (!business) {
-      return res.status(403).json({
-        success: false,
-        code: "BUSINESS_INACTIVE",
-        message: "This business account is not active.",
-      });
-    }
-
-    const subscription = getEffectiveSubscription(business);
-    if (!subscription.accessAllowed) {
-      return res.status(403).json({
-        success: false,
-        code: "SUBSCRIPTION_REQUIRED",
-        message: "Your trial or subscription has expired. Choose a plan to create new invoices.",
-        subscription,
-        subscriptionOptions: getPublicSubscriptionPlans(),
-      });
-    }
-
-    req.subscription = subscription;
-    return next();
-  } catch (error) {
-    console.error("Subscription access check failed:", error.message);
-    return res.status(500).json({
-      success: false,
-      message: "Could not verify your subscription. Please try again.",
-    });
-  }
-}
-
-app.get("/api/subscription/plans", (req, res) => {
-  return res.json({ success: true, ...getPublicSubscriptionPlans() });
-});
-
-app.get("/api/subscription/status", authenticateToken, async (req, res) => {
-  try {
-    const businessId = getBusinessId(req, res);
-    if (!businessId) return;
-    const business = await db.collection("businesses").findOne({
-      _id: businessId,
-      status: "active",
-    });
-    if (!business) {
-      return res.status(404).json({ success: false, message: "Business account not found or inactive." });
-    }
-    return res.json({
-      success: true,
-      subscription: getEffectiveSubscription(business),
-      subscriptionOptions: getPublicSubscriptionPlans(),
-    });
-  } catch (error) {
-    console.error("Failed to fetch subscription status:", error.message);
-    return res.status(500).json({ success: false, message: "Could not fetch subscription status." });
-  }
-});
-// =====================================================
-// RAZORPAY SUBSCRIPTION PAYMENTS
-// Configure RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in server/.env.
-// Never expose RAZORPAY_KEY_SECRET to the React frontend.
-function safeStringEqual(a, b) {
-  const left = Buffer.from(String(a || ""), "utf8");
-  const right = Buffer.from(String(b || ""), "utf8");
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
-}
-
-app.post("/api/subscription/create-order", authenticateToken, async (req, res) => {
-  try {
-    const businessId = getBusinessId(req, res);
-    if (!businessId) return;
-
-    const planId = typeof req.body?.planId === "string" ? req.body.planId : "";
-    const plan = SUBSCRIPTION_PLANS[planId];
-    if (!plan) {
-      return res.status(400).json({ success: false, message: "Choose a valid subscription plan." });
-    }
-
-    const keyId = process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    if (!keyId || !keySecret) {
-      return res.status(503).json({
-        success: false,
-        message: "Online payments are not configured yet. Add Razorpay test credentials to the backend environment.",
-      });
-    }
-
-    const business = await db.collection("businesses").findOne({
-      _id: businessId,
-      status: "active",
-    });
-    if (!business) {
-      return res.status(404).json({ success: false, message: "Business account not found or inactive." });
-    }
-
-    const receipt = `be_${businessId.toString().slice(-8)}_${Date.now()}`.slice(0, 40);
-    const razorpayResponse = await fetch("https://api.razorpay.com/v1/orders", {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        amount: plan.amountPaise,
-        currency: plan.currency,
-        receipt,
-        notes: { businessId: businessId.toString(), planId: plan.id, billingCycle: plan.billingCycle },
-      }),
-    });
-
-    const orderData = await razorpayResponse.json();
-    if (!razorpayResponse.ok || !orderData.id) {
-      console.error("Razorpay order creation failed:", orderData.error?.description || razorpayResponse.status);
-      return res.status(502).json({ success: false, message: "Could not create a payment order. Please try again." });
-    }
-
-    await db.collection("subscription_orders").updateOne(
-      { orderId: orderData.id },
-      {
-        $setOnInsert: {
-          orderId: orderData.id,
-          businessId,
-          planId: plan.id,
-          amountPaise: plan.amountPaise,
-          currency: plan.currency,
-          status: "created",
-          createdAt: new Date(),
-        },
-      },
-      { upsert: true }
-    );
-
-    return res.status(201).json({
-      success: true,
-      keyId,
-      order: {
-        id: orderData.id,
-        amount: orderData.amount,
-        currency: orderData.currency,
-      },
-      plan: {
-        id: plan.id,
-        name: plan.name,
-        billingCycle: plan.billingCycle,
-        amountInr: plan.amountInr,
-      },
-    });
-  } catch (error) {
-    console.error("Subscription order error:", error.message);
-    return res.status(500).json({ success: false, message: "Could not start checkout. Please try again." });
-  }
-});
-
-app.post("/api/subscription/verify-payment", authenticateToken, async (req, res) => {
-  try {
-    const businessId = getBusinessId(req, res);
-    if (!businessId) return;
-
-    const orderId = typeof req.body?.razorpay_order_id === "string" ? req.body.razorpay_order_id : "";
-    const paymentId = typeof req.body?.razorpay_payment_id === "string" ? req.body.razorpay_payment_id : "";
-    const signature = typeof req.body?.razorpay_signature === "string" ? req.body.razorpay_signature : "";
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-
-    if (!orderId || !paymentId || !signature || !keySecret) {
-      return res.status(400).json({ success: false, message: "Payment verification details are incomplete." });
-    }
-
-    const expectedSignature = crypto
-      .createHmac("sha256", keySecret)
-      .update(`${orderId}|${paymentId}`)
-      .digest("hex");
-
-    if (!safeStringEqual(expectedSignature, signature)) {
-      return res.status(400).json({ success: false, message: "Payment signature verification failed." });
-    }
-
-    const orders = db.collection("subscription_orders");
-    const order = await orders.findOne({ orderId, businessId });
-    if (!order) {
-      return res.status(404).json({ success: false, message: "Payment order not found for this business." });
-    }
-
-    if (order.status === "paid") {
-      const business = await db.collection("businesses").findOne({ _id: businessId });
-      return res.json({
-        success: true,
-        message: "Payment was already verified.",
-        subscription: getEffectiveSubscription(business),
-      });
-    }
-
-    // Confirm payment details with Razorpay itself; do not trust browser-supplied amount/status.
-    const keyId = process.env.RAZORPAY_KEY_ID;
-    const paymentResponse = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(paymentId)}`, {
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
-      },
-    });
-    const paymentData = await paymentResponse.json();
-
-    if (!paymentResponse.ok ||
-        paymentData.order_id !== orderId ||
-        paymentData.status !== "captured" ||
-        Number(paymentData.amount) !== order.amountPaise ||
-        paymentData.currency !== order.currency) {
-      return res.status(400).json({ success: false, message: "Payment is not captured or does not match this order." });
-    }
-
-    const plan = SUBSCRIPTION_PLANS[order.planId];
-    if (!plan) {
-      return res.status(400).json({ success: false, message: "The plan linked to this payment is no longer available." });
-    }
-
-    const now = new Date();
-    const periodEnd = new Date(now);
-    periodEnd.setMonth(periodEnd.getMonth() + (plan.billingCycle === "annual" ? 12 : 1));
-
-    // Conditional transition makes repeat verification requests safe.
-    const markedPaid = await orders.updateOne(
-      { _id: order._id, status: "created" },
-      { $set: { status: "paid", paymentId, verifiedAt: now } }
-    );
-    if (!markedPaid.modifiedCount) {
-      const refreshedOrder = await orders.findOne({ _id: order._id });
-      if (refreshedOrder?.status !== "paid") {
-        return res.status(409).json({ success: false, message: "Payment order is already being processed. Refresh subscription status." });
-      }
-    }
-
-    await db.collection("businesses").updateOne(
-      { _id: businessId, status: "active" },
-      {
-        $set: {
-          subscription: {
-            plan: plan.id,
-            status: "active",
-            billingCycle: plan.billingCycle,
-            currentPeriodStartAt: now,
-            currentPeriodEndAt: periodEnd,
-            lastPaymentId: paymentId,
-            lastOrderId: orderId,
-            updatedAt: now,
-          },
-          updatedAt: now,
-        },
-      }
-    );
-
-    const business = await db.collection("businesses").findOne({ _id: businessId });
-    return res.json({
-      success: true,
-      message: "Payment verified and subscription activated.",
-      subscription: getEffectiveSubscription(business),
-    });
-  } catch (error) {
-    console.error("Payment verification error:", error.message);
-    return res.status(500).json({ success: false, message: "Could not verify payment. If money was deducted, contact support before retrying." });
-  }
-});
-
-// =====================================================
 // STORE SETTINGS API
 // =====================================================
 const DEFAULT_STORE_SETTINGS = {
@@ -400,7 +148,7 @@ const DEFAULT_STORE_SETTINGS = {
   gstin: "",
   logo: "",
 };
-app.get("/api/settings", authenticateToken, async (req, res) => {
+app.get("/api/settings", requireApprovedBusiness, async (req, res) => {
   try {
     const businessId = getBusinessId(req, res);
     if (!businessId) return;
@@ -450,7 +198,7 @@ app.get("/api/settings", authenticateToken, async (req, res) => {
     });
   }
 });
-app.put("/api/settings", authenticateToken, async (req, res) => {
+app.put("/api/settings", requireApprovedBusiness, async (req, res) => {
   try {
     const businessId = getBusinessId(req, res);
     if (!businessId) return;
@@ -478,7 +226,7 @@ app.put("/api/settings", authenticateToken, async (req, res) => {
     }
     if (
       phone.length > 20 ||
-      (phone && !/^[+\d()\\-\s]{7,20}$/.test(phone))
+      (phone && !/^[+\d()\s-]{7,20}$/.test(phone))
     ) {
       return res.status(400).json({
         success: false,
@@ -487,7 +235,7 @@ app.put("/api/settings", authenticateToken, async (req, res) => {
     }
     if (
       email.length > 120 ||
-      (email && !/^[^\s@]+@[^\s@]+\\.[^\s@]+$/.test(email))
+      (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     ) {
       return res.status(400).json({
         success: false,
@@ -557,7 +305,7 @@ app.put("/api/settings", authenticateToken, async (req, res) => {
 // SALES API
 // =====================================================
 // Get invoices for the logged-in business.
-app.get("/api/sales", authenticateToken, async (req, res) => {
+app.get("/api/sales", requireApprovedBusiness, async (req, res) => {
   try {
     const businessId = getBusinessId(req, res);
     if (!businessId) return;
@@ -583,7 +331,7 @@ app.get("/api/sales", authenticateToken, async (req, res) => {
   }
 });
 // Get one invoice belonging to the logged-in business.
-app.get("/api/sales/:id", authenticateToken, async (req, res) => {
+app.get("/api/sales/:id", requireApprovedBusiness, async (req, res) => {
   try {
     const businessId = getBusinessId(req, res);
     if (!businessId) return;
@@ -610,7 +358,7 @@ app.get("/api/sales/:id", authenticateToken, async (req, res) => {
   }
 });
 // Save an invoice.
-app.post("/api/sales", authenticateToken, requireActiveSubscription, async (req, res) => {
+app.post("/api/sales", requireApprovedBusiness, async (req, res) => {
   const businessId = getBusinessId(req, res);
   if (!businessId) return;
 
@@ -723,7 +471,7 @@ app.post("/api/sales", authenticateToken, requireActiveSubscription, async (req,
 // PRODUCTS API
 // =====================================================
 // Get products.
-app.get("/api/products", authenticateToken, async (req, res) => {
+app.get("/api/products", requireApprovedBusiness, async (req, res) => {
   try {
     const businessId = getBusinessId(req, res);
     if (!businessId) return;
@@ -744,7 +492,7 @@ app.get("/api/products", authenticateToken, async (req, res) => {
   }
 });
 // Add product.
-app.post("/api/products", authenticateToken, async (req, res) => {
+app.post("/api/products", requireApprovedBusiness, async (req, res) => {
   try {
     const businessId = getBusinessId(req, res);
     if (!businessId) return;
@@ -822,7 +570,7 @@ app.post("/api/products", authenticateToken, async (req, res) => {
   }
 });
 // Update product.
-app.put("/api/products/:id", authenticateToken, async (req, res) => {
+app.put("/api/products/:id", requireApprovedBusiness, async (req, res) => {
   try {
     const businessId = getBusinessId(req, res);
     if (!businessId) return;
@@ -913,7 +661,7 @@ app.put("/api/products/:id", authenticateToken, async (req, res) => {
   }
 });
 // Delete product.
-app.delete("/api/products/:id", authenticateToken, async (req, res) => {
+app.delete("/api/products/:id", requireApprovedBusiness, async (req, res) => {
   try {
     const businessId = getBusinessId(req, res);
     if (!businessId) return;
@@ -950,7 +698,7 @@ app.delete("/api/products/:id", authenticateToken, async (req, res) => {
 // CUSTOMERS API
 // =====================================================
 // Get customers.
-app.get("/api/customers", authenticateToken, async (req, res) => {
+app.get("/api/customers", requireApprovedBusiness, async (req, res) => {
   try {
     const businessId = getBusinessId(req, res);
     if (!businessId) return;
@@ -971,7 +719,7 @@ app.get("/api/customers", authenticateToken, async (req, res) => {
   }
 });
 // Add customer or reuse an existing customer with the same mobile.
-app.post("/api/customers", authenticateToken, async (req, res) => {
+app.post("/api/customers", requireApprovedBusiness, async (req, res) => {
   try {
     const businessId = getBusinessId(req, res);
     if (!businessId) return;
@@ -1002,7 +750,7 @@ app.post("/api/customers", authenticateToken, async (req, res) => {
     if (
       cleanEmail.length > 150 ||
       (cleanEmail &&
-        !/^[^\s@]+@[^\s@]+\\.[^\s@]+$/.test(cleanEmail))
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail))
     ) {
       return res.status(400).json({
         success: false,
@@ -1059,7 +807,7 @@ app.post("/api/customers", authenticateToken, async (req, res) => {
   }
 });
 // Update customer.
-app.put("/api/customers/:id", authenticateToken, async (req, res) => {
+app.put("/api/customers/:id", requireApprovedBusiness, async (req, res) => {
   try {
     const businessId = getBusinessId(req, res);
     if (!businessId) return;
@@ -1097,7 +845,7 @@ app.put("/api/customers/:id", authenticateToken, async (req, res) => {
     if (
       cleanEmail.length > 150 ||
       (cleanEmail &&
-        !/^[^\s@]+@[^\s@]+\\.[^\s@]+$/.test(cleanEmail))
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail))
     ) {
       return res.status(400).json({
         success: false,
@@ -1160,7 +908,7 @@ app.put("/api/customers/:id", authenticateToken, async (req, res) => {
 // Delete customer.
 app.delete(
   "/api/customers/:id",
-  authenticateToken,
+  requireApprovedBusiness,
   async (req, res) => {
     try {
       const businessId = getBusinessId(req, res);
@@ -1205,37 +953,6 @@ async function startServer() {
     console.log("Connected to MongoDB successfully!");
     console.log(`Database: ${DATABASE_NAME}`);
 
-    // Give existing active businesses without subscription data a one-month
-    // rollout trial once. Existing subscription records are never overwritten.
-    const legacyTrialStart = new Date();
-    const legacyTrialEnd = getTrialEndDate(legacyTrialStart);
-    const legacyTrialMigration = await db.collection("businesses").updateMany(
-      {
-        status: "active",
-        $or: [
-          { subscription: { $exists: false } },
-          { subscription: null },
-        ],
-      },
-      {
-        $set: {
-          subscription: {
-            plan: "trial",
-            status: "trial",
-            trialStartAt: legacyTrialStart,
-            trialEndAt: legacyTrialEnd,
-            currentPeriodStartAt: legacyTrialStart,
-            currentPeriodEndAt: legacyTrialEnd,
-            billingCycle: null,
-            createdAt: legacyTrialStart,
-            updatedAt: legacyTrialStart,
-          },
-        },
-      }
-    );
-    if (legacyTrialMigration.modifiedCount > 0) {
-      console.log(`Started rollout trials for ${legacyTrialMigration.modifiedCount} existing business(es).`);
-    }
     await salesCollection().createIndex(
       { businessId: 1, id: 1 },
       { unique: true, name: "unique_business_invoice_id" }
@@ -1243,6 +960,10 @@ async function startServer() {
     console.log("Unique invoice index is ready.");
     const { ensureAuthIndexes } = registerAuthRoutes(app, db);
     await ensureAuthIndexes();
+
+    registerAdminRoutes(app, db);
+    console.log("Admin approval routes are ready.");
+    
     console.log("Authentication indexes are ready.");
     app.listen(PORT, () => {
       console.log(

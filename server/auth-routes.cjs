@@ -1,3 +1,4 @@
+
 const { ObjectId } = require("mongodb");
 const {
   hashPassword,
@@ -5,31 +6,6 @@ const {
   createAuthToken,
   authenticateToken,
 } = require("./auth.cjs");
-const {
-  TRIAL_DURATION_MONTHS,
-  getTrialEndDate,
-  getPublicSubscriptionPlans,
-} = require("./subscription-config.cjs");
-
-const TRIAL_PLAN = "trial";
-const TRIAL_STATUS = "trial";
-
-function getSubscriptionSummary(business) {
-  const subscription = business?.subscription;
-  if (!subscription) {
-    return null;
-  }
-
-  return {
-    plan: subscription.plan,
-    status: subscription.status,
-    trialStartAt: subscription.trialStartAt || null,
-    trialEndAt: subscription.trialEndAt || null,
-    currentPeriodStartAt: subscription.currentPeriodStartAt || null,
-    currentPeriodEndAt: subscription.currentPeriodEndAt || null,
-    billingCycle: subscription.billingCycle || null,
-  };
-}
 
 function registerAuthRoutes(app, db) {
   const businesses = db.collection("businesses");
@@ -42,6 +18,8 @@ function registerAuthRoutes(app, db) {
     );
   }
 
+  // Register a new user and business.
+  // New businesses remain pending until an administrator approves them.
   app.post("/api/auth/register", async (req, res) => {
     let createdBusinessId = null;
     let createdUserId = null;
@@ -51,16 +29,21 @@ function registerAuthRoutes(app, db) {
         typeof req.body?.businessName === "string"
           ? req.body.businessName.trim()
           : "";
+
       const ownerName =
         typeof req.body?.ownerName === "string"
           ? req.body.ownerName.trim()
           : "";
+
       const email =
         typeof req.body?.email === "string"
           ? req.body.email.trim().toLowerCase()
           : "";
+
       const password =
-        typeof req.body?.password === "string" ? req.body.password : "";
+        typeof req.body?.password === "string"
+          ? req.body.password
+          : "";
 
       if (!businessName || !ownerName || !email || !password) {
         return res.status(400).json({
@@ -96,6 +79,7 @@ function registerAuthRoutes(app, db) {
       }
 
       const existingUser = await users.findOne({ email });
+
       if (existingUser) {
         return res.status(409).json({
           success: false,
@@ -104,27 +88,21 @@ function registerAuthRoutes(app, db) {
       }
 
       const now = new Date();
-      const trialEndAt = getTrialEndDate(now);
+
       const businessResult = await businesses.insertOne({
         name: businessName,
+        status: "pending",
+        approvalRequestedAt: now,
+        approvedAt: null,
+        approvedBy: null,
         createdAt: now,
         updatedAt: now,
-        status: "active",
-        subscription: {
-          plan: TRIAL_PLAN,
-          status: TRIAL_STATUS,
-          trialStartAt: now,
-          trialEndAt,
-          currentPeriodStartAt: now,
-          currentPeriodEndAt: trialEndAt,
-          billingCycle: null,
-          createdAt: now,
-          updatedAt: now,
-        },
       });
+
       createdBusinessId = businessResult.insertedId;
 
       const passwordHash = await hashPassword(password);
+
       const userResult = await users.insertOne({
         businessId: createdBusinessId,
         name: ownerName,
@@ -133,20 +111,14 @@ function registerAuthRoutes(app, db) {
         role: "owner",
         createdAt: now,
       });
-      createdUserId = userResult.insertedId;
 
-      const user = {
-        _id: userResult.insertedId,
-        businessId: createdBusinessId,
-      };
-      const token = createAuthToken(user);
-      const business = await businesses.findOne({ _id: createdBusinessId });
+      createdUserId = userResult.insertedId;
 
       return res.status(201).json({
         success: true,
-        message: `Your ${TRIAL_DURATION_MONTHS}-month free trial has started.`,
-        subscriptionOptions: getPublicSubscriptionPlans(),
-        token,
+        status: "pending",
+        message:
+          "Your account has been created. Your business is awaiting BillEase administrator approval. You can log in after approval.",
         user: {
           id: String(userResult.insertedId),
           name: ownerName,
@@ -156,15 +128,19 @@ function registerAuthRoutes(app, db) {
         business: {
           id: String(createdBusinessId),
           name: businessName,
-          subscription: getSubscriptionSummary(business),
+          status: "pending",
         },
       });
     } catch (error) {
+      // Clean up a partially created registration.
       if (createdUserId) {
         try {
           await users.deleteOne({ _id: createdUserId });
         } catch (cleanupError) {
-          console.error("User registration cleanup failed:", cleanupError.message);
+          console.error(
+            "User registration cleanup failed:",
+            cleanupError.message
+          );
         }
       }
 
@@ -187,6 +163,7 @@ function registerAuthRoutes(app, db) {
       }
 
       console.error("Registration error:", error.message);
+
       return res.status(500).json({
         success: false,
         message: "Could not create the account. Please try again.",
@@ -194,14 +171,18 @@ function registerAuthRoutes(app, db) {
     }
   });
 
+  // Login only when the user's business has been approved.
   app.post("/api/auth/login", async (req, res) => {
     try {
       const email =
         typeof req.body?.email === "string"
           ? req.body.email.trim().toLowerCase()
           : "";
+
       const password =
-        typeof req.body?.password === "string" ? req.body.password : "";
+        typeof req.body?.password === "string"
+          ? req.body.password
+          : "";
 
       if (!email || !password) {
         return res.status(400).json({
@@ -211,6 +192,7 @@ function registerAuthRoutes(app, db) {
       }
 
       const user = await users.findOne({ email });
+
       if (!user || !(await verifyPassword(password, user.passwordHash))) {
         return res.status(401).json({
           success: false,
@@ -218,37 +200,42 @@ function registerAuthRoutes(app, db) {
         });
       }
 
-      if (!user.businessId) {
+      if (!user.businessId || !ObjectId.isValid(String(user.businessId))) {
         return res.status(403).json({
           success: false,
-          message: "This account is not linked to a business.",
-        });
-      }
-
-      const businessId = String(user.businessId);
-      if (!ObjectId.isValid(businessId)) {
-        return res.status(403).json({
-          success: false,
-          message: "This account has an invalid business association.",
+          message: "This account is not linked to a valid business.",
         });
       }
 
       const business = await businesses.findOne({
-        _id: new ObjectId(businessId),
-        status: "active",
+        _id: new ObjectId(String(user.businessId)),
       });
+
       if (!business) {
         return res.status(403).json({
           success: false,
-          message: "This business account is not active.",
+          message: "Business account not found.",
+        });
+      }
+
+      if (business.status !== "active") {
+        const status = business.status || "pending";
+
+        return res.status(403).json({
+          success: false,
+          status,
+          message:
+            status === "rejected"
+              ? "Your business registration was not approved. Please contact BillEase support."
+              : "Your business is awaiting approval. You can log in after BillEase approves your account.",
         });
       }
 
       const token = createAuthToken(user);
+
       return res.json({
         success: true,
         message: "Login successful.",
-        subscriptionOptions: getPublicSubscriptionPlans(),
         token,
         user: {
           id: String(user._id),
@@ -259,11 +246,12 @@ function registerAuthRoutes(app, db) {
         business: {
           id: String(business._id),
           name: business.name,
-          subscription: getSubscriptionSummary(business),
+          status: business.status,
         },
       });
     } catch (error) {
       console.error("Login error:", error.message);
+
       return res.status(500).json({
         success: false,
         message: "Could not log in. Please try again.",
@@ -271,6 +259,7 @@ function registerAuthRoutes(app, db) {
     }
   });
 
+  // Verify the current session and re-check business approval.
   app.get("/api/auth/me", authenticateToken, async (req, res) => {
     try {
       if (
@@ -287,6 +276,7 @@ function registerAuthRoutes(app, db) {
         _id: new ObjectId(req.auth.userId),
         businessId: new ObjectId(req.auth.businessId),
       });
+
       if (!user) {
         return res.status(401).json({
           success: false,
@@ -296,12 +286,21 @@ function registerAuthRoutes(app, db) {
 
       const business = await businesses.findOne({
         _id: new ObjectId(req.auth.businessId),
-        status: "active",
       });
+
       if (!business) {
         return res.status(403).json({
           success: false,
-          message: "This business account is not active.",
+          message: "Business account not found.",
+        });
+      }
+
+      if (business.status !== "active") {
+        return res.status(403).json({
+          success: false,
+          status: business.status || "pending",
+          message:
+            "This business is not approved for BillEase access.",
         });
       }
 
@@ -316,11 +315,12 @@ function registerAuthRoutes(app, db) {
         business: {
           id: String(business._id),
           name: business.name,
-          subscription: getSubscriptionSummary(business),
+          status: business.status,
         },
       });
     } catch (error) {
       console.error("Session check error:", error.message);
+
       return res.status(500).json({
         success: false,
         message: "Could not verify the current session.",

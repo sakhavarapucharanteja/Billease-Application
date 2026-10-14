@@ -14,6 +14,9 @@ import "./Dashboard.css";
 import SalesHistory from "./SalesHistory";
 import Customers from "./Customers";
 import Reports from "./Reports";
+import SidebarFooter from "./SidebarFooter";
+import Plans from "./Plans";
+import AdminApp from "./AdminApp";
 import StoreSettings, { readStoreSettings } from "./Settings";
 import {
 Search, ShoppingCart,History, Plus, Minus, Trash2, ReceiptText,
@@ -30,6 +33,7 @@ maximumFractionDigits: 2,
 }).format(amount);
 function App() {
 const [activePage, setActivePage] = useState("pos");
+const [previousPage, setPreviousPage] = useState("pos");
 const [products, setProducts] = useState([]);
 const [productsLoading, setProductsLoading] = useState(true);
 const [sales, setSales] = useState([]);
@@ -641,6 +645,10 @@ function startNewSale() {
 setLastReceipt(null);
 setNotice("");
 }
+
+if (window.location.pathname.replace(/\/+$/, "") === "/admin") {
+  return <AdminApp />;
+}
 if (authChecking) {
   return (
     <div className="login-page">
@@ -751,29 +759,29 @@ Products
   Sales History
 </button>
 </nav>
+
 <div className="sidebar-bottom">
-<button
-  className={`nav-item ${activePage === "settings" ? "active" : ""}`}
-  onClick={() => {
-    setActivePage("settings");
-    setSidebarOpen(false);
-    setNotice("");
-  }}
->
-  <Settings size={19} /> Settings
-</button>
-<div className="plan-card">
-<div className="plan-top"><span className="plan-spark">✦</span><strong>Free trial</strong></div>
-<p>Your demo workspace is ready. Explore billing features.</p>
-<button onClick={() => setNotice("Subscription plans will be added later.")}>Explore plans <span>→</span></button>
-</div>
-<div className="profile">
-<div className="profile-avatar">{(authUser?.name || "U").charAt(0).toUpperCase()}</div>
-<div className="profile-info"><strong>{authUser?.name || "Account"}</strong><span>{authUser?.email || "Signed in"}</span></div>
-<button type="button" className="profile-menu" onClick={handleLogout} title="Sign out" aria-label="Sign out">↪</button>
-</div>
+  <SidebarFooter
+    user={{
+      name: authUser?.name || "Account",
+      email: authUser?.email || "Signed in",
+    }}
+    onSettings={() => {
+      setActivePage("settings");
+      setSidebarOpen(false);
+      setNotice("");
+    }}
+    onExplorePlans={() => {
+      setPreviousPage(activePage);
+      setActivePage("plans");
+      setSidebarOpen(false);
+      setNotice("");
+    }}
+    onLogout={handleLogout}
+  />
 </div>
 </aside>
+
 {sidebarOpen && <button className="mobile-overlay" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar" />}
 <main className="main-content">
 <header className="topbar">
@@ -783,31 +791,47 @@ Products
 <div className="breadcrumb">
 Workspace <span>/</span>
 <strong>
-  {activePage === "pos"
-    ? "POS Billing"
-    : activePage === "products"
-      ? "Products"
-      : activePage === "customers"
-        ? "Customers"
-        : activePage === "sales-history"
-          ? "Sales History"
-          : activePage === "reports"
-            ? "Reports"
-            : "Dashboard"}
+  
+{activePage === "pos"
+  ? "POS Billing"
+  : activePage === "products"
+    ? "Products"
+    : activePage === "customers"
+      ? "Customers"
+      : activePage === "sales-history"
+        ? "Sales History"
+        : activePage === "reports"
+          ? "Reports"
+          : activePage === "plans"
+            ? "Plans"
+            : activePage === "settings"
+              ? "Settings"
+              : activePage === "dashboard"
+                ? "Dashboard"
+                : "Products"}
+
 </strong>
 </div>
 <h2>
-  {activePage === "pos"
-    ? "Point of Sale"
-    : activePage === "products"
-      ? "Product Management"
-      : activePage === "customers"
-        ? "Customer Management"
-        : activePage === "sales-history"
-          ? "Sales History"
-          : activePage === "reports"
-            ? "Reports"
-            : "Dashboard"}
+  
+{activePage === "pos"
+  ? "Point of Sale"
+  : activePage === "products"
+    ? "Product Management"
+    : activePage === "customers"
+      ? "Customer Management"
+      : activePage === "sales-history"
+        ? "Sales History"
+        : activePage === "reports"
+          ? "Reports"
+          : activePage === "plans"
+            ? "Choose Your Plan"
+            : activePage === "settings"
+              ? "Store Settings"
+              : activePage === "dashboard"
+                ? "Dashboard"
+                : "Product Management"}
+
 </h2>
 </div>
 </div>
@@ -1090,9 +1114,20 @@ aria-label={`Add ${product.name} to cart`}
 <button onClick={() => setNotice("")} aria-label="Dismiss message"><X size={16} /></button>
 </div>
 )}
-{activePage === "settings" ? (
+
+{activePage === "plans" ? (
+  <Plans
+    onBack={() => setActivePage(previousPage)}
+    onChoosePlan={(planName) => {
+      setNotice(
+        `${planName} selected. Subscription activation and payments will be available after payment integration is configured.`
+      );
+    }}
+  />
+) : activePage === "settings" ? (
   <StoreSettings onSave={(nextSettings) => setStoreSettings(nextSettings)} />
 ) : activePage === "reports" ? (
+
   <Reports sales={sales} products={products} />
 ) : activePage === "customers" ? (
   <Customers />
@@ -1130,7 +1165,16 @@ aria-label={`Add ${product.name} to cart`}
 )}
 </div>
 )}
-<footer className="app-footer"><span>BillEase POS <span className="footer-dot">·</span> Demo version</span><span>Built for simpler billing <span className="footer-heart">♥</span></span></footer>
+
+<footer className="app-footer">
+  <span>
+    BillEase <span className="footer-dot">·</span> Billing & Inventory
+  </span>
+  <span>
+    Simple billing. Smarter business.
+  </span>
+</footer>
+
 </main>
 {lastReceipt && (
 <div className="print-receipt">
