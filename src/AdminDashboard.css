@@ -1002,3 +1002,50 @@
     flex: auto;
   }
 }
+
+
+
+.admin-suspend,
+.admin-activate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-suspend {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.admin-suspend:hover {
+  border-color: #fdba74;
+  background: #ffedd5;
+}
+
+.admin-activate {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.admin-activate:hover {
+  border-color: #86efac;
+  background: #dcfce7;
+}
+
+.admin-suspend:disabled,
+.admin-activate:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}

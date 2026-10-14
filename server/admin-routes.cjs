@@ -340,6 +340,90 @@ function registerAdminRoutes(app, db) {
   );
 
 
+  
+  // Suspend or reactivate a business.
+  app.patch(
+    "/api/admin/businesses/:id/status",
+    requirePlatformAdmin,
+    async (req, res) => {
+      try {
+        const id = req.params.id;
+        const requestedStatus = req.body?.status;
+
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid business ID.",
+          });
+        }
+
+        if (!["active", "suspended"].includes(requestedStatus)) {
+          return res.status(400).json({
+            success: false,
+            message: "Status must be active or suspended.",
+          });
+        }
+
+        const businessId = new ObjectId(id);
+
+        const business = await businesses.findOne({
+          _id: businessId,
+        });
+
+        if (!business) {
+          return res.status(404).json({
+            success: false,
+            message: "Business not found.",
+          });
+        }
+
+        if (!["active", "suspended"].includes(business.status)) {
+          return res.status(409).json({
+            success: false,
+            message:
+              "Only active or suspended businesses can use this action.",
+          });
+        }
+
+        if (business.status === requestedStatus) {
+          return res.status(409).json({
+            success: false,
+            message: `Business is already ${requestedStatus}.`,
+          });
+        }
+
+        await businesses.updateOne(
+          { _id: businessId },
+          {
+            $set: {
+              status: requestedStatus,
+              updatedAt: new Date(),
+              statusChangedAt: new Date(),
+              statusChangedBy: new ObjectId(req.auth.userId),
+            },
+          }
+        );
+
+        return res.json({
+          success: true,
+          message:
+            requestedStatus === "suspended"
+              ? "Business suspended successfully."
+              : "Business activated successfully.",
+          status: requestedStatus,
+        });
+      } catch (error) {
+        console.error("Business status update error:", error.message);
+
+        return res.status(500).json({
+          success: false,
+          message: "Could not update business status.",
+        });
+      }
+    }
+  );
+
+
   // Approve a pending business.
   app.patch(
     "/api/admin/businesses/:id/approve",

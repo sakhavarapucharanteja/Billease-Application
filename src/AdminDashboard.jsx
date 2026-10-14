@@ -177,6 +177,109 @@ export default function AdminDashboard({ admin, onLogout }) {
   }
 
 
+async function changeBusinessStatus(business, newStatus) {
+  const action = newStatus === "suspended" ? "suspend" : "activate";
+
+  setWorkingId(String(business._id));
+
+  try {
+    const response = await adminApiFetch(
+      `/admin/businesses/${business._id}/status`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || `Could not ${action} business.`);
+    }
+
+    toast.dismiss();
+    toast.success(
+      newStatus === "suspended"
+        ? `${business.name} has been suspended.`
+        : `${business.name} has been activated.`
+    );
+
+    await loadBusinesses();
+  } catch (err) {
+    toast.error(err.message || `Could not ${action} this business.`);
+  } finally {
+    setWorkingId("");
+  }
+}
+
+function confirmStatusChange(business, newStatus) {
+  const suspending = newStatus === "suspended";
+
+  toast.dismiss();
+
+  toast(
+    ({ closeToast }) => (
+      <div className="billease-confirm-content">
+        <div
+          className={`billease-confirm-icon ${
+            suspending ? "reject" : "approve"
+          }`}
+        >
+          {suspending ? (
+            <ShieldCheck size={30} />
+          ) : (
+            <CheckCircle2 size={30} />
+          )}
+        </div>
+
+        <h3>{suspending ? "Suspend business?" : "Activate business?"}</h3>
+
+        <p className="billease-confirm-business">{business.name}</p>
+
+        <p className="billease-confirm-description">
+          {suspending
+            ? "The business owner will lose access to the BillEase workspace until the business is reactivated."
+            : "The business owner will regain access to the BillEase workspace."}
+        </p>
+
+        <div className="billease-confirm-buttons">
+          <button
+            type="button"
+            className="billease-confirm-cancel"
+            onClick={closeToast}
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            className={
+              suspending
+                ? "billease-confirm-reject"
+                : "billease-confirm-approve"
+            }
+            onClick={() => {
+              closeToast();
+              changeBusinessStatus(business, newStatus);
+            }}
+          >
+            {suspending ? "Yes, suspend" : "Yes, activate"}
+          </button>
+        </div>
+      </div>
+    ),
+    {
+      position: "top-center",
+      autoClose: false,
+      closeOnClick: false,
+      draggable: false,
+      closeButton: false,
+      className: "billease-confirm-toast",
+    }
+  );
+}
+
+
 function confirmBusinessAction(business, action) {
   const approving = action === "approve";
 
@@ -410,6 +513,36 @@ function confirmBusinessAction(business, action) {
                               <Pencil size={15} />
                               Edit
                             </button>
+
+                            {(status === "active" || status === "suspended") && (
+                            <button
+                                type="button"
+                                className={
+                                status === "active"
+                                    ? "admin-suspend"
+                                    : "admin-activate"
+                                }
+                                onClick={() =>
+                                confirmStatusChange(
+                                    business,
+                                    status === "active" ? "suspended" : "active"
+                                )
+                                }
+                                disabled={Boolean(workingId) || saving}
+                            >
+                                {status === "active" ? (
+                                <>
+                                    <ShieldCheck size={15} />
+                                    Suspend
+                                </>
+                                ) : (
+                                <>
+                                    <CheckCircle2 size={15} />
+                                    Activate
+                                </>
+                                )}
+                            </button>
+                            )}
 
                             {status === "pending" && (
                               <>
