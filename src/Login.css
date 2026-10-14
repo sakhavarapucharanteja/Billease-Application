@@ -193,3 +193,116 @@
     font-size: 20px;
   }
 }
+
+
+
+/* Registration success screen */
+
+.registration-success {
+  text-align: center;
+}
+
+.registration-success-icon {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 76px;
+  height: 76px;
+  margin: 28px auto 18px;
+  border-radius: 50%;
+  background: #ecfdf3;
+  color: #15803d;
+}
+
+.registration-success-heading h2 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.registration-success-heading p {
+  margin: 0;
+  color: #737b91;
+  line-height: 1.6;
+}
+
+.registration-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  margin: 25px 0 18px;
+  padding: 17px;
+  border: 1px solid #fde3a7;
+  border-radius: 12px;
+  background: #fffbeb;
+  color: #a16207;
+  text-align: left;
+}
+
+.registration-status svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.registration-status strong {
+  display: block;
+  font-size: 13px;
+}
+
+.registration-status p {
+  margin: 6px 0 0;
+  color: #806b45;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.registration-business,
+.registration-email {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid #e6e9f2;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.registration-business svg {
+  flex-shrink: 0;
+  color: #5546ed;
+}
+
+.registration-business div,
+.registration-email {
+  min-width: 0;
+}
+
+.registration-business div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.registration-business span,
+.registration-email span {
+  color: #858ba0;
+  font-size: 11px;
+}
+
+.registration-business strong,
+.registration-email strong {
+  color: #30364a;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.registration-email {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 22px;
+}
+
+.registration-success .login-security {
+  margin-top: 20px;
+}
