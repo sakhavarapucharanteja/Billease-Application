@@ -842,3 +842,110 @@
     width: 100%;
   }
 }
+
+
+
+
+/* BillEase React Toastify confirmation */
+
+.billease-confirm-toast {
+  width: 360px;
+  max-width: calc(100vw - 40px);
+  padding: 0 !important;
+  border: 1px solid #e8eaf2;
+  border-radius: 14px !important;
+  background: #ffffff !important;
+  color: #20243a !important;
+  box-shadow: 0 15px 45px rgba(25, 30, 55, 0.15);
+}
+
+.billease-confirm-toast .Toastify__toast-body {
+  display: block;
+  padding: 16px;
+  margin: 0;
+}
+
+.billease-toast-confirm {
+  width: 100%;
+}
+
+.billease-toast-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+}
+
+.billease-toast-business {
+  margin: 12px 0 6px;
+  color: #5546ed;
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.billease-toast-description {
+  margin: 0;
+  color: #737b91;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.billease-toast-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 17px;
+}
+
+.billease-toast-actions button {
+  padding: 8px 11px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.billease-toast-cancel {
+  border: 1px solid #e1e5ee;
+  background: #ffffff;
+  color: #596174;
+}
+
+.billease-toast-cancel:hover {
+  background: #f5f6fb;
+}
+
+.billease-toast-approve {
+  border: 1px solid #15803d;
+  background: #15803d;
+  color: #ffffff;
+}
+
+.billease-toast-approve:hover {
+  background: #166534;
+}
+
+.billease-toast-reject {
+  border: 1px solid #dc2626;
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.billease-toast-reject:hover {
+  background: #b91c1c;
+}
+
+.Toastify__toast {
+  font-family: inherit;
+  border-radius: 12px;
+}
+
+@media (max-width: 480px) {
+  .billease-confirm-toast {
+    width: calc(100vw - 32px);
+    max-width: none;
+  }
+}

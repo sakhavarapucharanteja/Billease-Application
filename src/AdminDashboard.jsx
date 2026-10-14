@@ -16,6 +16,8 @@ import {
   X,
   Save,
 } from "lucide-react";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import "./AdminDashboard.css";
 
 const FILTERS = [
@@ -37,15 +39,12 @@ export default function AdminDashboard({ admin, onLogout }) {
   const [businesses, setBusinesses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState("");
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [editingBusiness, setEditingBusiness] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
   const loadBusinesses = useCallback(async () => {
     setLoading(true);
-    setError("");
 
     try {
       const response = await adminApiFetch(
@@ -61,7 +60,7 @@ export default function AdminDashboard({ admin, onLogout }) {
         Array.isArray(data.businesses) ? data.businesses : []
       );
     } catch (err) {
-      setError(err.message || "Could not load business registrations.");
+      toast.error(err.message || "Could not load business registrations.");
     } finally {
       setLoading(false);
     }
@@ -71,11 +70,16 @@ export default function AdminDashboard({ admin, onLogout }) {
     loadBusinesses();
   }, [loadBusinesses]);
 
-  function startEditing(business) {
-    const owner =
+  function getOwner(business) {
+    return (
       (business.owners || []).find((item) => item.role === "owner") ||
       (business.owners || [])[0] ||
-      {};
+      {}
+    );
+  }
+
+  function startEditing(business) {
+    const owner = getOwner(business);
 
     setEditingBusiness(business);
     setForm({
@@ -84,8 +88,6 @@ export default function AdminDashboard({ admin, onLogout }) {
       email: owner.email || "",
       phone: business.phone || "",
     });
-    setError("");
-    setNotice("");
   }
 
   function closeEditor() {
@@ -105,8 +107,6 @@ export default function AdminDashboard({ admin, onLogout }) {
     if (!editingBusiness) return;
 
     setSaving(true);
-    setError("");
-    setNotice("");
 
     try {
       const response = await adminApiFetch(
@@ -128,12 +128,12 @@ export default function AdminDashboard({ admin, onLogout }) {
         throw new Error(data.message || "Could not update business details.");
       }
 
-      setNotice("Business details updated successfully.");
       setEditingBusiness(null);
       setForm(EMPTY_FORM);
+      toast.success("Business details updated successfully.");
       await loadBusinesses();
     } catch (err) {
-      setError(err.message || "Could not save business details.");
+      toast.error(err.message || "Could not save business details.");
     } finally {
       setSaving(false);
     }
@@ -142,17 +142,7 @@ export default function AdminDashboard({ admin, onLogout }) {
   async function updateBusiness(business, action) {
     const actionLabel = action === "approve" ? "approve" : "reject";
 
-    if (
-      !window.confirm(
-        `Are you sure you want to ${actionLabel} "${business.name}"?`
-      )
-    ) {
-      return;
-    }
-
     setWorkingId(String(business._id));
-    setError("");
-    setNotice("");
 
     try {
       const response = await adminApiFetch(
@@ -166,21 +156,87 @@ export default function AdminDashboard({ admin, onLogout }) {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || `Could not ${actionLabel} business.`);
+        throw new Error(
+          data.message || `Could not ${actionLabel} business.`
+        );
       }
 
-      setNotice(
+      toast.dismiss();
+      toast.success(
         action === "approve"
-          ? `${business.name} has been approved.`
-          : `${business.name} has been rejected.`
+          ? `${business.name} approved successfully!`
+          : `${business.name} rejected successfully!`
       );
 
       await loadBusinesses();
     } catch (err) {
-      setError(err.message || `Could not ${actionLabel} this business.`);
+      toast.error(err.message || `Could not ${actionLabel} this business.`);
     } finally {
       setWorkingId("");
     }
+  }
+
+  function confirmBusinessAction(business, action) {
+    const approving = action === "approve";
+
+    toast.dismiss();
+
+    toast(
+      ({ closeToast }) => (
+        <div className="billease-toast-confirm">
+          <div className="billease-toast-heading">
+            {approving ? (
+              <CheckCircle2 size={21} color="#15803d" />
+            ) : (
+              <XCircle size={21} color="#dc2626" />
+            )}
+            <strong>
+              {approving ? "Approve business?" : "Reject registration?"}
+            </strong>
+          </div>
+
+          <p className="billease-toast-business">{business.name}</p>
+
+          <p className="billease-toast-description">
+            {approving
+              ? "This business will be granted access to BillEase."
+              : "This business registration will be rejected."}
+          </p>
+
+          <div className="billease-toast-actions">
+            <button
+              type="button"
+              className="billease-toast-cancel"
+              onClick={closeToast}
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              className={
+                approving
+                  ? "billease-toast-approve"
+                  : "billease-toast-reject"
+              }
+              onClick={() => {
+                closeToast();
+                updateBusiness(business, action);
+              }}
+            >
+              {approving ? "Yes, approve" : "Yes, reject"}
+            </button>
+          </div>
+        </div>
+      ),
+      {
+        autoClose: false,
+        closeOnClick: false,
+        draggable: false,
+        closeButton: true,
+        className: "billease-confirm-toast",
+      }
+    );
   }
 
   function handleLogout() {
@@ -190,6 +246,15 @@ export default function AdminDashboard({ admin, onLogout }) {
 
   return (
     <main className="admin-dashboard">
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        newestOnTop
+        closeOnClick
+        pauseOnHover
+        theme="light"
+      />
+
       <header className="admin-topbar">
         <div className="admin-brand">
           <div className="admin-brand-icon">
@@ -242,31 +307,13 @@ export default function AdminDashboard({ admin, onLogout }) {
               type="button"
               key={value}
               className={`admin-filter ${status === value ? "selected" : ""}`}
-              onClick={() => {
-                setStatus(value);
-                setNotice("");
-                setError("");
-              }}
+              onClick={() => setStatus(value)}
             >
               <Icon size={17} />
               {label}
             </button>
           ))}
         </nav>
-
-        {notice && (
-          <div className="admin-alert success" role="status">
-            <CheckCircle2 size={18} />
-            {notice}
-          </div>
-        )}
-
-        {error && (
-          <div className="admin-alert error" role="alert">
-            <XCircle size={18} />
-            {error}
-          </div>
-        )}
 
         <section className="admin-business-panel">
           <div className="admin-panel-heading">
@@ -307,10 +354,7 @@ export default function AdminDashboard({ admin, onLogout }) {
                 </thead>
                 <tbody>
                   {businesses.map((business) => {
-                    const owner =
-                      (business.owners || []).find(
-                        (item) => item.role === "owner"
-                      ) || (business.owners || [])[0] || {};
+                    const owner = getOwner(business);
 
                     return (
                       <tr key={business._id}>
@@ -363,7 +407,7 @@ export default function AdminDashboard({ admin, onLogout }) {
                                   type="button"
                                   className="admin-approve"
                                   onClick={() =>
-                                    updateBusiness(business, "approve")
+                                    confirmBusinessAction(business, "approve")
                                   }
                                   disabled={Boolean(workingId) || saving}
                                 >
@@ -372,11 +416,12 @@ export default function AdminDashboard({ admin, onLogout }) {
                                     ? "Working..."
                                     : "Approve"}
                                 </button>
+
                                 <button
                                   type="button"
                                   className="admin-reject"
                                   onClick={() =>
-                                    updateBusiness(business, "reject")
+                                    confirmBusinessAction(business, "reject")
                                   }
                                   disabled={Boolean(workingId) || saving}
                                 >
